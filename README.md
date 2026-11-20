@@ -1,5 +1,9 @@
 # DiskAudit
 
+[![CI](https://github.com/tianyuec11-design/DiskAudit/actions/workflows/ci.yml/badge.svg)](https://github.com/tianyuec11-design/DiskAudit/actions/workflows/ci.yml)
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
+[![PowerShell](https://img.shields.io/badge/PowerShell-5.1%2B%20%7C%207-5391FE.svg)](https://github.com/tianyuec11-design/DiskAudit)
+
 **Portable, snapshot-based disk space auditing for Windows.**
 
 DiskAudit answers one question honestly: *"why is this volume full, and what changed?"*

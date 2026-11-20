@@ -1,9 +1,0 @@
-name: hello
-on: push
-jobs:
-  hi:
-    runs-on: windows-latest
-    steps:
-      - name: say hi
-        shell: pwsh
-        run: Write-Host 'hello from a minimal workflow'
