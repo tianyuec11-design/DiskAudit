@@ -1,0 +1,98 @@
+{
+  "schemaVersion": "1.0",
+  "kind": "report",
+  "generatedAt": "2026-11-20T12:02:00Z",
+  "tool": {
+    "name": "DiskAudit",
+    "version": "0.1.0"
+  },
+  "host": {
+    "name": "<HOST>",
+    "user": "<USER>",
+    "os": "Microsoft Windows NT 10.0.26200.0",
+    "psVersion": "7.7.0",
+    "isElevated": false
+  },
+  "baseline": {
+    "generatedAt": "2026-11-19T10:02:00Z",
+    "root": "<USERPROFILE>\\AppData\\Local\\Temp\\diskaudit-sample",
+    "profile": "standard",
+    "accurate": false
+  },
+  "current": {
+    "generatedAt": "2026-11-20T12:01:55Z",
+    "root": "<USERPROFILE>\\AppData\\Local\\Temp\\diskaudit-sample",
+    "profile": "standard",
+    "accurate": false
+  },
+  "elapsedDays": 1.0833,
+  "volume": {
+    "drive": "C:",
+    "totalBytes": 429497774080,
+    "freeBeforeBytes": 170470699008,
+    "freeAfterBytes": 170470699008,
+    "freeDeltaBytes": 0,
+    "usedBeforeBytes": 259027075072,
+    "usedAfterBytes": 259027075072,
+    "usedDeltaBytes": 0,
+    "freePerDayBytes": 0
+  },
+  "totals": {
+    "grewBytes": 5242880,
+    "shrankBytes": 0
+  },
+  "changes": [
+    {
+      "path": "<USERPROFILE>\\AppData\\Local\\Temp\\diskaudit-sample\\app",
+      "kind": "dir",
+      "beforeBytes": 125829120,
+      "afterBytes": 131072000,
+      "deltaBytes": 5242880,
+      "deltaPerDay": 4839840,
+      "change": "grew"
+    }
+  ],
+  "grew": [
+    {
+      "path": "<USERPROFILE>\\AppData\\Local\\Temp\\diskaudit-sample\\app",
+      "kind": "dir",
+      "beforeBytes": 125829120,
+      "afterBytes": 131072000,
+      "deltaBytes": 5242880,
+      "deltaPerDay": 4839840,
+      "change": "grew"
+    }
+  ],
+  "shrank": [],
+  "findings": [
+    {
+      "id": "STALE_VERSION_DIRS",
+      "severity": "warn",
+      "title": "Multiple versions of the same application are present",
+      "detail": "2 version directories under <USERPROFILE>\\AppData\\Local\\Temp\\diskaudit-sample\\app; the 1 non-current one(s) account for 110.0 MB and were last touched 120 days before the newest.",
+      "path": "<USERPROFILE>\\AppData\\Local\\Temp\\diskaudit-sample\\app",
+      "reclaimableBytes": 115343360,
+      "evidence": {
+        "ageGapDays": 120,
+        "staleBytes": 115343360,
+        "versions": [
+          "2.1.0",
+          "1.9.0"
+        ]
+      },
+      "suggestion": "The older build has not been touched in 120 days; a major upgrade usually leaves it behind. Remove it after confirming the new build runs."
+    }
+  ],
+  "verdict": "ok",
+  "comparable": true,
+  "incomparableReason": null,
+  "warnBytes": 314572800,
+  "reconciliation": {
+    "usedBytes": 259027075072,
+    "attributedBytes": 131076096,
+    "residualBytes": null,
+    "residualKind": "not-applicable",
+    "accurate": false,
+    "method": "skipped: scan root is not the volume root"
+  }
+}

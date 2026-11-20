@@ -1,0 +1,18 @@
+# Generated data
+snapshots/
+*.snapshot.json
+/report.json
+/report-*.json
+
+# Test scratch
+tests/fixture/
+tests/_out/
+
+# PowerShell
+*.log
+
+# Editors / OS
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db

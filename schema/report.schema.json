@@ -1,0 +1,95 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "https://github.com/tianyuec11-design/DiskAudit/schema/report.schema.json",
+  "title": "DiskAudit report",
+  "description": "The difference between two snapshots. Byte counts are Int64; timestamps are ISO-8601 UTC strings.",
+  "type": "object",
+  "required": [
+    "schemaVersion", "kind", "generatedAt", "tool", "host",
+    "baseline", "current", "elapsedDays", "volume", "totals",
+    "changes", "grew", "shrank", "findings", "verdict", "comparable"
+  ],
+  "properties": {
+    "schemaVersion": { "type": "string", "pattern": "^\\d+\\.\\d+$" },
+    "kind": { "const": "report" },
+    "generatedAt": { "type": "string", "format": "date-time" },
+    "tool": {
+      "type": "object",
+      "properties": { "name": { "type": "string" }, "version": { "type": "string" } }
+    },
+    "host": { "type": "object" },
+    "baseline": { "$ref": "#/definitions/snapshotRef" },
+    "current": { "$ref": "#/definitions/snapshotRef" },
+    "elapsedDays": { "type": "number", "minimum": 0 },
+    "volume": {
+      "type": "object",
+      "required": ["totalBytes", "freeBeforeBytes", "freeAfterBytes", "freeDeltaBytes", "freePerDayBytes"],
+      "properties": {
+        "drive": { "type": "string" },
+        "totalBytes": { "type": "integer", "minimum": 0 },
+        "freeBeforeBytes": { "type": "integer", "minimum": 0 },
+        "freeAfterBytes": { "type": "integer", "minimum": 0 },
+        "freeDeltaBytes": { "type": "integer" },
+        "usedBeforeBytes": { "type": "integer", "minimum": 0 },
+        "usedAfterBytes": { "type": "integer", "minimum": 0 },
+        "usedDeltaBytes": { "type": "integer" },
+        "freePerDayBytes": { "type": ["integer", "null"] }
+      }
+    },
+    "totals": {
+      "type": "object",
+      "properties": {
+        "grewBytes": { "type": "integer" },
+        "shrankBytes": { "type": "integer" }
+      }
+    },
+    "changes": { "type": "array", "items": { "$ref": "#/definitions/change" } },
+    "grew": { "type": "array", "items": { "$ref": "#/definitions/change" } },
+    "shrank": { "type": "array", "items": { "$ref": "#/definitions/change" } },
+    "findings": { "type": "array", "items": { "$ref": "#/definitions/finding" } },
+    "verdict": { "enum": ["ok", "watch", "alert"] },
+    "comparable": { "type": "boolean", "description": "false when baseline and current used different scan profiles; path deltas must then be ignored" },
+    "incomparableReason": { "type": ["string", "null"] },
+    "warnBytes": { "type": "integer", "minimum": 0 },
+    "reconciliation": { "type": "object" }
+  },
+  "definitions": {
+    "snapshotRef": {
+      "type": "object",
+      "required": ["generatedAt", "root", "profile"],
+      "properties": {
+        "generatedAt": { "type": "string", "format": "date-time" },
+        "root": { "type": "string" },
+        "profile": { "enum": ["quick", "standard", "deep"] },
+        "accurate": { "type": "boolean" }
+      }
+    },
+    "change": {
+      "type": "object",
+      "required": ["path", "kind", "beforeBytes", "afterBytes", "deltaBytes", "change"],
+      "properties": {
+        "path": { "type": "string" },
+        "kind": { "enum": ["dir", "file"] },
+        "beforeBytes": { "type": "integer", "minimum": 0 },
+        "afterBytes": { "type": "integer", "minimum": 0 },
+        "deltaBytes": { "type": "integer" },
+        "deltaPerDay": { "type": ["integer", "null"] },
+        "change": { "enum": ["grew", "shrank"] }
+      }
+    },
+    "finding": {
+      "type": "object",
+      "required": ["id", "severity", "title", "detail", "reclaimableBytes", "suggestion"],
+      "properties": {
+        "id": { "type": "string" },
+        "severity": { "enum": ["info", "warn", "high"] },
+        "title": { "type": "string" },
+        "detail": { "type": "string" },
+        "path": { "type": ["string", "null"] },
+        "reclaimableBytes": { "type": "integer", "minimum": 0 },
+        "evidence": { "type": "object" },
+        "suggestion": { "type": "string" }
+      }
+    }
+  }
+}

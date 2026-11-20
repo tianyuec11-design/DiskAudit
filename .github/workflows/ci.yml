@@ -1,0 +1,74 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  test:
+    name: tests (${{ matrix.shell }})
+    runs-on: windows-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - shell: pwsh
+            label: PowerShell 7
+          - shell: powershell
+            label: Windows PowerShell 5.1
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Show PowerShell version
+        shell: ${{ matrix.shell }}
+        run: $PSVersionTable | Out-String
+
+      - name: Run test suite
+        shell: ${{ matrix.shell }}
+        run: ./tests/run-tests.ps1
+
+  lint:
+    name: PSScriptAnalyzer
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install PSScriptAnalyzer
+        shell: pwsh
+        run: Install-Module PSScriptAnalyzer -Force -Scope CurrentUser -SkipPublisherCheck
+
+      - name: Lint module and CLI
+        shell: pwsh
+        run: |
+          $results = Invoke-ScriptAnalyzer -Path . -Recurse -Severity Error
+          if ($results) { $results | Format-Table -AutoSize | Out-String | Write-Host; exit 1 }
+          Write-Host 'No errors reported.'
+
+  smoke:
+    name: end-to-end smoke (real snapshot)
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Snapshot the runner's C: drive
+        shell: pwsh
+        run: ./bin/disk-audit.ps1 -Profile quick -NoCompare -SaveSnapshot -OutFile ./out/snapshot.json
+
+      - name: Validate the payload against the schema
+        shell: pwsh
+        run: |
+          $snap = Get-Content ./out/snapshot.json -Raw | ConvertFrom-Json
+          if ($snap.kind -ne 'snapshot') { throw 'unexpected kind' }
+          if (-not $snap.entries) { throw 'no entries produced' }
+          if ($snap.volume.totalBytes -le 0) { throw 'bad volume size' }
+          Write-Host ("entries={0} hotspots={1} findings={2}" -f @($snap.entries).Count, @($snap.hotspots).Count, @($snap.findings).Count)
+
+      - name: Second snapshot must produce a report
+        shell: pwsh
+        run: |
+          ./bin/disk-audit.ps1 -Profile quick -Format markdown -OutFile ./out/report.md
+          if (-not (Test-Path ./out/report.md)) { throw 'report not written' }
+          Get-Content ./out/report.md | Select-Object -First 12

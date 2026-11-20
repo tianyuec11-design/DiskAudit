@@ -1,0 +1,174 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "https://github.com/tianyuec11-design/DiskAudit/schema/snapshot.schema.json",
+  "title": "DiskAudit snapshot",
+  "description": "A point-in-time measurement of one volume or directory. All byte counts are Int64, all timestamps are ISO-8601 UTC strings.",
+  "type": "object",
+  "required": [
+    "schemaVersion", "kind", "generatedAt", "tool", "host", "scan",
+    "volume", "entries", "hotspots", "reconciliation", "findings"
+  ],
+  "properties": {
+    "schemaVersion": { "type": "string", "pattern": "^\\d+\\.\\d+$" },
+    "kind": { "const": "snapshot" },
+    "generatedAt": { "type": "string", "format": "date-time" },
+    "tool": {
+      "type": "object",
+      "required": ["name", "version"],
+      "properties": {
+        "name": { "type": "string" },
+        "version": { "type": "string" }
+      }
+    },
+    "host": {
+      "type": "object",
+      "required": ["name", "user", "os", "psVersion", "isElevated"],
+      "properties": {
+        "name": { "type": "string" },
+        "user": { "type": "string" },
+        "os": { "type": "string" },
+        "psVersion": { "type": "string" },
+        "isElevated": { "type": "boolean" }
+      }
+    },
+    "scan": {
+      "type": "object",
+      "required": ["root", "profile", "accurate", "durationMs", "truncated", "entryCount", "hotspotCount"],
+      "properties": {
+        "root": { "type": "string" },
+        "profile": { "enum": ["quick", "standard", "deep"] },
+        "accurate": { "type": "boolean" },
+        "followReparse": { "type": "boolean" },
+        "maxDepth": { "type": "integer", "minimum": 0 },
+        "hotspotDepth": { "type": "integer", "minimum": 1 },
+        "durationMs": { "type": "integer", "minimum": 0 },
+        "truncated": { "type": "boolean" },
+        "skippedNames": { "type": "array", "items": { "type": "string" } },
+        "entryCount": { "type": "integer", "minimum": 0 },
+        "hotspotCount": { "type": "integer", "minimum": 0 }
+      }
+    },
+    "volume": {
+      "type": "object",
+      "required": ["drive", "fileSystem", "totalBytes", "freeBytes", "usedBytes", "freePct"],
+      "properties": {
+        "drive": { "type": "string", "pattern": "^[A-Za-z]:$" },
+        "label": { "type": "string" },
+        "fileSystem": { "type": "string" },
+        "totalBytes": { "type": "integer", "minimum": 0 },
+        "freeBytes": { "type": "integer", "minimum": 0 },
+        "usedBytes": { "type": "integer", "minimum": 0 },
+        "freePct": { "type": "number", "minimum": 0, "maximum": 100 }
+      }
+    },
+    "entries": {
+      "type": "array",
+      "description": "Depth-1 entries. Non-overlapping: their physicalBytes may be summed to reconcile against the volume.",
+      "items": { "$ref": "#/definitions/entry" }
+    },
+    "hotspots": {
+      "type": "array",
+      "description": "Deeper nodes ranked by physicalBytes. Counters include descendants - do not sum them.",
+      "items": { "$ref": "#/definitions/hotspot" }
+    },
+    "reconciliation": {
+      "type": "object",
+      "required": ["usedBytes", "attributedBytes", "residualBytes", "residualKind", "accurate", "method"],
+      "properties": {
+        "usedBytes": { "type": "integer", "minimum": 0 },
+        "attributedBytes": { "type": "integer", "minimum": 0 },
+        "residualBytes": { "type": ["integer", "null"] },
+        "residualKind": { "enum": ["undercount", "overcount", "not-applicable"] },
+        "accurate": { "type": "boolean" },
+        "method": { "type": "string" }
+      }
+    },
+    "findings": { "type": "array", "items": { "$ref": "#/definitions/finding" } }
+  },
+  "definitions": {
+    "entry": {
+      "type": "object",
+      "required": [
+        "kind", "systemFile", "id", "path", "name", "depth",
+        "logicalBytes", "physicalBytes", "sharedBytes",
+        "fileCount", "dirCount", "errorCount",
+        "sparseFiles", "offlineFiles", "reparseSkipped",
+        "newestWriteUtc", "bytesLast24h", "bytesLast7d",
+        "logBytes", "tmpBytes", "installerBytes"
+      ],
+      "properties": {
+        "kind": { "enum": ["dir", "file"] },
+        "systemFile": { "type": "boolean" },
+        "id": { "type": "string", "pattern": "^p_[0-9a-f]{12}$" },
+        "path": { "type": "string" },
+        "name": { "type": "string" },
+        "depth": { "type": "integer", "minimum": 1 },
+        "logicalBytes": { "type": "integer", "minimum": 0 },
+        "physicalBytes": { "type": "integer", "minimum": 0 },
+        "sharedBytes": { "type": "integer", "minimum": 0 },
+        "fileCount": { "type": "integer", "minimum": 0 },
+        "dirCount": { "type": "integer", "minimum": 0 },
+        "errorCount": { "type": "integer", "minimum": 0 },
+        "sparseFiles": { "type": "integer", "minimum": 0 },
+        "offlineFiles": { "type": "integer", "minimum": 0 },
+        "reparseSkipped": { "type": "integer", "minimum": 0 },
+        "newestWriteUtc": { "type": ["string", "null"], "format": "date-time" },
+        "bytesLast24h": { "type": "integer", "minimum": 0 },
+        "bytesLast7d": { "type": "integer", "minimum": 0 },
+        "logBytes": { "type": "integer", "minimum": 0 },
+        "tmpBytes": { "type": "integer", "minimum": 0 },
+        "installerBytes": { "type": "integer", "minimum": 0 }
+      }
+    },
+    "hotspot": {
+      "type": "object",
+      "required": [
+        "id", "path", "name", "depth",
+        "logicalBytes", "physicalBytes", "sharedBytes",
+        "fileCount", "dirCount", "newestWriteUtc",
+        "bytesLast24h", "bytesLast7d", "logBytes"
+      ],
+      "properties": {
+        "id": { "type": "string", "pattern": "^p_[0-9a-f]{12}$" },
+        "path": { "type": "string" },
+        "name": { "type": "string" },
+        "parentPath": { "type": ["string", "null"] },
+        "depth": { "type": "integer", "minimum": 2 },
+        "logicalBytes": { "type": "integer", "minimum": 0 },
+        "physicalBytes": { "type": "integer", "minimum": 0 },
+        "sharedBytes": { "type": "integer", "minimum": 0 },
+        "fileCount": { "type": "integer", "minimum": 0 },
+        "dirCount": { "type": "integer", "minimum": 0 },
+        "errorCount": { "type": "integer", "minimum": 0 },
+        "sparseFiles": { "type": "integer", "minimum": 0 },
+        "offlineFiles": { "type": "integer", "minimum": 0 },
+        "newestWriteUtc": { "type": ["string", "null"], "format": "date-time" },
+        "bytesLast24h": { "type": "integer", "minimum": 0 },
+        "bytesLast7d": { "type": "integer", "minimum": 0 },
+        "logBytes": { "type": "integer", "minimum": 0 },
+        "tmpBytes": { "type": "integer", "minimum": 0 },
+        "installerBytes": { "type": "integer", "minimum": 0 }
+      }
+    },
+    "finding": {
+      "type": "object",
+      "required": ["id", "severity", "title", "detail", "path", "reclaimableBytes", "evidence", "suggestion"],
+      "properties": {
+        "id": {
+          "enum": [
+            "VOLUME_LOW_FREE", "RECENT_WRITE_BURST", "TEMP_BLOAT", "SYSTEM_SUPPORT_FILE",
+            "STALE_VERSION_DIRS", "UPDATER_STAGING", "LOG_ACCUMULATION", "PLACEHOLDER_FILES",
+            "RECONCILIATION_GAP", "SCAN_INCOMPLETE"
+          ]
+        },
+        "severity": { "enum": ["info", "warn", "high"] },
+        "title": { "type": "string" },
+        "detail": { "type": "string" },
+        "path": { "type": ["string", "null"] },
+        "reclaimableBytes": { "type": "integer", "minimum": 0 },
+        "evidence": { "type": "object" },
+        "suggestion": { "type": "string" }
+      }
+    }
+  }
+}

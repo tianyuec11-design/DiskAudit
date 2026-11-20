@@ -1,0 +1,180 @@
+{
+  "schemaVersion": "1.0",
+  "kind": "snapshot",
+  "generatedAt": "2026-11-20T12:01:55Z",
+  "tool": {
+    "name": "DiskAudit",
+    "version": "0.1.0"
+  },
+  "host": {
+    "name": "<HOST>",
+    "user": "<USER>",
+    "os": "Microsoft Windows NT 10.0.26200.0",
+    "psVersion": "7.7.0",
+    "isElevated": false
+  },
+  "scan": {
+    "root": "<USERPROFILE>\\AppData\\Local\\Temp\\diskaudit-sample",
+    "profile": "standard",
+    "accurate": false,
+    "followReparse": false,
+    "maxDepth": 0,
+    "hotspotDepth": 4,
+    "durationMs": 70,
+    "truncated": false,
+    "skippedNames": [
+      "System Volume Information"
+    ],
+    "entryCount": 2,
+    "hotspotCount": 3
+  },
+  "volume": {
+    "drive": "C:",
+    "label": "Windows-SSD",
+    "fileSystem": "NTFS",
+    "totalBytes": 429497774080,
+    "freeBytes": 170470699008,
+    "usedBytes": 259027075072,
+    "freePct": 39.69
+  },
+  "entries": [
+    {
+      "kind": "dir",
+      "systemFile": false,
+      "id": "p_f08acb21e83f",
+      "path": "<USERPROFILE>\\AppData\\Local\\Temp\\diskaudit-sample\\app",
+      "name": "app",
+      "depth": 1,
+      "logicalBytes": 131072000,
+      "physicalBytes": 131072000,
+      "sharedBytes": 0,
+      "fileCount": 3,
+      "dirCount": 3,
+      "errorCount": 0,
+      "sparseFiles": 0,
+      "offlineFiles": 0,
+      "reparseSkipped": 0,
+      "newestWriteUtc": "2026-11-20T12:01:55Z",
+      "bytesLast24h": 15728640,
+      "bytesLast7d": 15728640,
+      "logBytes": 0,
+      "tmpBytes": 0,
+      "installerBytes": 0
+    },
+    {
+      "kind": "file",
+      "systemFile": false,
+      "id": "p_afe7abec0377",
+      "path": "<USERPROFILE>\\AppData\\Local\\Temp\\diskaudit-sample\\readme.txt",
+      "name": "readme.txt",
+      "depth": 1,
+      "logicalBytes": 4096,
+      "physicalBytes": 4096,
+      "sharedBytes": 0,
+      "fileCount": 1,
+      "dirCount": 0,
+      "errorCount": 0,
+      "sparseFiles": 0,
+      "offlineFiles": 0,
+      "reparseSkipped": 0,
+      "newestWriteUtc": "2026-11-20T12:01:55Z",
+      "bytesLast24h": 4096,
+      "bytesLast7d": 4096,
+      "logBytes": 0,
+      "tmpBytes": 0,
+      "installerBytes": 0
+    }
+  ],
+  "hotspots": [
+    {
+      "id": "p_61054eeb482a",
+      "path": "<USERPROFILE>\\AppData\\Local\\Temp\\diskaudit-sample\\app\\1.9.0",
+      "name": "1.9.0",
+      "parentPath": "<USERPROFILE>\\AppData\\Local\\Temp\\diskaudit-sample\\app",
+      "depth": 2,
+      "logicalBytes": 115343360,
+      "physicalBytes": 115343360,
+      "sharedBytes": 0,
+      "fileCount": 1,
+      "dirCount": 0,
+      "errorCount": 0,
+      "sparseFiles": 0,
+      "offlineFiles": 0,
+      "newestWriteUtc": "2026-07-23T12:01:55Z",
+      "bytesLast24h": 0,
+      "bytesLast7d": 0,
+      "logBytes": 0,
+      "tmpBytes": 0,
+      "installerBytes": 0
+    },
+    {
+      "id": "p_6fe9491bee77",
+      "path": "<USERPROFILE>\\AppData\\Local\\Temp\\diskaudit-sample\\app\\2.1.0",
+      "name": "2.1.0",
+      "parentPath": "<USERPROFILE>\\AppData\\Local\\Temp\\diskaudit-sample\\app",
+      "depth": 2,
+      "logicalBytes": 10485760,
+      "physicalBytes": 10485760,
+      "sharedBytes": 0,
+      "fileCount": 1,
+      "dirCount": 0,
+      "errorCount": 0,
+      "sparseFiles": 0,
+      "offlineFiles": 0,
+      "newestWriteUtc": "2026-11-20T12:01:55Z",
+      "bytesLast24h": 10485760,
+      "bytesLast7d": 10485760,
+      "logBytes": 0,
+      "tmpBytes": 0,
+      "installerBytes": 0
+    },
+    {
+      "id": "p_10e12acb0e4d",
+      "path": "<USERPROFILE>\\AppData\\Local\\Temp\\diskaudit-sample\\app\\data",
+      "name": "data",
+      "parentPath": "<USERPROFILE>\\AppData\\Local\\Temp\\diskaudit-sample\\app",
+      "depth": 2,
+      "logicalBytes": 5242880,
+      "physicalBytes": 5242880,
+      "sharedBytes": 0,
+      "fileCount": 1,
+      "dirCount": 0,
+      "errorCount": 0,
+      "sparseFiles": 0,
+      "offlineFiles": 0,
+      "newestWriteUtc": "2026-11-20T12:01:55Z",
+      "bytesLast24h": 5242880,
+      "bytesLast7d": 5242880,
+      "logBytes": 0,
+      "tmpBytes": 0,
+      "installerBytes": 0
+    }
+  ],
+  "reconciliation": {
+    "usedBytes": 259027075072,
+    "attributedBytes": 131076096,
+    "residualBytes": null,
+    "residualKind": "not-applicable",
+    "accurate": false,
+    "method": "skipped: scan root is not the volume root"
+  },
+  "findings": [
+    {
+      "id": "STALE_VERSION_DIRS",
+      "severity": "warn",
+      "title": "Multiple versions of the same application are present",
+      "detail": "2 version directories under <USERPROFILE>\\AppData\\Local\\Temp\\diskaudit-sample\\app; the 1 non-current one(s) account for 110.0 MB and were last touched 120 days before the newest.",
+      "path": "<USERPROFILE>\\AppData\\Local\\Temp\\diskaudit-sample\\app",
+      "reclaimableBytes": 115343360,
+      "evidence": {
+        "ageGapDays": 120,
+        "staleBytes": 115343360,
+        "versions": [
+          "2.1.0",
+          "1.9.0"
+        ]
+      },
+      "suggestion": "The older build has not been touched in 120 days; a major upgrade usually leaves it behind. Remove it after confirming the new build runs."
+    }
+  ]
+}
