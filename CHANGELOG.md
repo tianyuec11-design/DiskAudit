@@ -3,6 +3,34 @@
 本项目遵循 [语义化版本](https://semver.org/lang/zh-CN/)。
 数据契约（`schemaVersion`）与工具版本独立演进。
 
+## [0.2.0] - 2026-11-20
+
+### 新增
+
+- **中文输出**：`-Language auto|en|zh-CN`。默认跟随 Windows 显示语言，
+  覆盖报告正文、发现条目以及 JSON 中的 `title`/`detail`/`suggestion`。
+  机器可读字段（`id`、`severity`、`evidence`、字节数）不随语言变化。
+- **首次运行引导**：首次执行会明确告知"已建立基线、暂无可对比数据"，
+  并给出下一步该做什么，而不是只丢一行 `Snapshot written.`
+- **PowerShell 界面提示**：显示当前档位与语言、扫描开始/结束与耗时、
+  快照保存路径，以及三条常用命令提示（JSON / 对象 / 语言）。
+- **`-PassThru`**：把结果对象返回给管道，便于脚本二次处理。
+- **`-Help`**：内置中英文帮助，列出全部参数与典型流程。
+- **`-Quiet`**：只输出报告，去掉横幅与提示。
+- 新增 `Set-DiskAuditLanguage` / `Get-DiskAuditLanguage` 两个导出函数。
+
+### 修复
+
+- `-Format json -OutFile` 时仍会把整份 JSON 打到标准输出，污染管道；
+  现在只写文件并提示路径。
+- CLI 用变量接收返回值，导致 `-Format json` 的输出被吞掉；改为直接进管道。
+- `New-DiskAuditSnapshot` 会无条件重置语言，覆盖调用方设置的 `-Language`。
+- 测试用例受本机 UI 语言影响（中文系统上断言英文标签会失败），现在固定语言后运行。
+
+### 变更
+
+- 版本号 0.1.0 → 0.2.0；测试数 35 → 41。
+
 ## [0.1.0] - 2026-11-20
 
 首个公开版本。

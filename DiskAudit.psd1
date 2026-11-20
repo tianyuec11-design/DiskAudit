@@ -1,6 +1,6 @@
 ﻿@{
     RootModule        = 'DiskAudit.psm1'
-    ModuleVersion     = '0.1.0'
+    ModuleVersion     = '0.2.0'
     GUID              = 'c1f1a1e7-6a5c-4d3b-9b8e-2f0d7c4a1b55'
     Author            = 'DiskAudit contributors'
     CompanyName       = 'DiskAudit'
@@ -16,6 +16,8 @@
         'Format-DiskAuditReport'
         'Format-DiskAuditSize'
         'Invoke-DiskAudit'
+        'Set-DiskAuditLanguage'
+        'Get-DiskAuditLanguage'
     )
     CmdletsToExport   = @()
     VariablesToExport = @()

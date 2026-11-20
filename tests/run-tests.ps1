@@ -16,6 +16,10 @@ $repo = Split-Path -Parent $here
 
 Import-Module (Join-Path $repo 'DiskAudit.psd1') -Force
 
+# The assertions below check English labels, so pin the language here instead of
+# inheriting the OS UI culture (a zh-CN machine would otherwise produce Chinese).
+$null = Set-DiskAuditLanguage 'en'
+
 $script:Passed = 0
 $script:Failed = 0
 
@@ -170,6 +174,24 @@ try {
     Assert-That 'incomparableReason explains why' ($reportMixed.incomparableReason -match 'profile')
     $textMixed = Format-DiskAuditReport -Report $reportMixed -Style text
     Assert-That 'text report warns about incompatible profiles' ($textMixed -match 'WARNING')
+    # ---------------------------------------------------------- localisation
+    Write-Host ''
+    Write-Host 'localisation' -ForegroundColor Yellow
+
+    $null = Set-DiskAuditLanguage 'zh-CN'
+    Assert-That 'language switches to zh-CN' ((Get-DiskAuditLanguage) -eq 'zh-CN') ("got " + (Get-DiskAuditLanguage))
+    $zhText = Format-DiskAuditReport -Report $reportGrow -Style text
+    Assert-That 'Chinese report contains the verdict label' ($zhText -match '结论')
+    Assert-That 'Chinese report still contains the data' ($zhText -match 'sub')
+
+    $null = Set-DiskAuditLanguage 'en'
+    Assert-That 'language switches back to en' ((Get-DiskAuditLanguage) -eq 'en') ("got " + (Get-DiskAuditLanguage))
+    $enText = Format-DiskAuditReport -Report $reportGrow -Style text
+    Assert-That 'English report contains the verdict label' ($enText -match 'Verdict')
+
+    $null = Set-DiskAuditLanguage 'auto'
+    Assert-That 'auto resolves to a supported language' (@('en','zh-CN') -contains (Get-DiskAuditLanguage)) ("got " + (Get-DiskAuditLanguage))
+    $null = Set-DiskAuditLanguage 'en'   # restore for the rendering assertions below
     # -------------------------------------------------------------- rendering
     Write-Host ''
     Write-Host 'rendering' -ForegroundColor Yellow

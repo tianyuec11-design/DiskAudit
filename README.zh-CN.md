@@ -159,7 +159,49 @@ pwsh ./bin/disk-audit.ps1 -Path "$env:LOCALAPPDATA"
 
 # 脱敏后再分享（主机名、用户目录会被替换）
 pwsh ./bin/disk-audit.ps1 -Format json -Redact -OutFile report.json
+
+# 中文输出（默认跟随系统语言，这里可强制指定）
+pwsh ./bin/disk-audit.ps1 -Language zh-CN
+
+# 查看内置帮助（跟随当前语言）
+pwsh ./bin/disk-audit.ps1 -Help
+
+# 不要文字报告，直接拿对象做二次处理
+$r = pwsh ./bin/disk-audit.ps1 -PassThru
 ```
+
+### 第一次运行会告诉你什么
+
+新机器没有历史数据，所以第一次运行只能描述现状并记录基线。它会明说这一点，并告诉你下一步该做什么：
+
+```text
+DiskAudit 0.2.0   档位=standard   语言=zh-CN
+正在扫描 C:\ ...（档位 standard，首次完整扫描约需 1-2 分钟）
+扫描完成：23 个顶层条目，13 条发现，用时 61.2 秒
+
+这是第一次运行，已记录基线，暂时没有可对比的数据。
+
+  C:  已用 241.35 GB / 共 400.00 GB（39.7% 可用）
+   [warn] 同一程序存在多个版本目录
+            ...
+
+快照已保存：./snapshots/snapshot-20261120T124653Z-standard-std.json
+下一步：过一段时间（或发现磁盘变小）再运行一次同样的命令，就能看到变化。
+
+要结构化结果：  .\bin\disk-audit.ps1 -Format json -OutFile report.json
+要 PowerShell 对象： $r = .\bin\disk-audit.ps1 -PassThru
+切换语言：      -Language zh-CN   或   -Language en
+```
+
+### 输出语言
+
+`-Language auto`（默认）跟随 Windows 显示语言；`en` 与 `zh-CN` 可强制指定。
+
+它影响所有**给人看**的文字：报告正文、发现条目，以及 JSON 里的 `title` / `detail` / `suggestion` 三个字段。
+
+**机器可读的契约不随语言变化**：`id`、`severity`、`evidence`、`reclaimableBytes` 以及所有字节数完全一致，
+所以看板可以直接忽略这些散文，只按 `id` 和 `evidence` 渲染。
+
 
 ---
 

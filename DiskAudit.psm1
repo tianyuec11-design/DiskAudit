@@ -19,11 +19,285 @@
 #>
 
 $script:ToolName      = 'DiskAudit'
-$script:ToolVersion   = '0.1.0'
+$script:ToolVersion   = '0.2.0'
 $script:SchemaVersion = '1.0'
 
 $script:NativeReady   = $false
 $script:NativeError   = $null
+
+# ---------------------------------------------------------------------------
+# localisation
+# ---------------------------------------------------------------------------
+# Human-readable text is resolved at run time so the same code can emit
+# English or Simplified Chinese. Machine-readable fields (ids, evidence,
+# byte counts) never change with the language.
+
+$script:Language = 'en'
+
+function Set-DiskAuditLanguage {
+    [CmdletBinding()]
+    param([string]$Language = 'auto')
+
+    $lang = $Language
+    if ([string]::IsNullOrWhiteSpace($lang) -or $lang -eq 'auto') {
+        $ui = [System.Globalization.CultureInfo]::CurrentUICulture.Name
+        $lang = if ($ui -like 'zh*') { 'zh-CN' } else { 'en' }
+    }
+    if ($lang -match '^zh') { $script:Language = 'zh-CN' } else { $script:Language = 'en' }
+    return $script:Language
+}
+
+function Get-DiskAuditLanguage { return $script:Language }
+
+function M {
+    param([Parameter(Mandatory)][string]$Key, [object[]]$FormatArgs)
+
+    $table = $script:Messages[$script:Language]
+    if (-not $table) { $table = $script:Messages['en'] }
+    $tpl = $table[$Key]
+    if (-not $tpl) { $tpl = $script:Messages['en'][$Key] }
+    if (-not $tpl) { return $Key }
+    if ($null -ne $FormatArgs -and $FormatArgs.Count -gt 0) {
+        try { return ($tpl -f $FormatArgs) } catch { return $tpl }
+    }
+    return $tpl
+}
+
+$script:Messages = @{
+    en = @{
+        # ---- report: text ----
+        'report.header'         = ' Disk audit report   {0}'
+        'report.subtitle'       = ' profile {0}  |  language {1}'
+        'report.baseline'       = ' Baseline : {0}  ({1})'
+        'report.current'        = ' Current  : {0}  ({1})'
+        'report.elapsed'        = ' Elapsed  : {0:N2} days'
+        'report.free'           = ' Free     : {0,10} -> {1,10}   ({2}{3})'
+        'report.perday'         = ' Per day  : {0,10}'
+        'report.perday_na'      = ' Per day  :        n/a  (interval too short to extrapolate)'
+        'report.grew'           = ' -- Grew --------------------------------------------------'
+        'report.shrank'         = ' -- Shrank ------------------------------------------------'
+        'report.findings'       = ' -- Findings ----------------------------------------------'
+        'report.recon'          = ' -- Reconciliation ----------------------------------------'
+        'report.attributed'     = '   attributed : {0}'
+        'report.volume_used'    = '   volume used: {0}'
+        'report.residual'       = '   residual   : {0}  ({1})'
+        'report.residual_na'    = '   residual   : n/a  (scan root is not the volume root)'
+        'report.verdict'        = ' Verdict: {0}'
+        'report.warning'        = ' !! WARNING --------------------------------------------------'
+        'report.warning_reason' = '    {0}'
+        'report.warning_body1'  = '    Path deltas are suppressed because the two snapshots used'
+        'report.warning_body2'  = '    different scan profiles. Free space movement above is still valid.'
+        'report.finding_line'   = '   [{0,-4}] {1}'
+        'report.finding_detail' = '            {0}'
+        'report.finding_at'     = '            at {0}'
+        'report.change_row'     = '   {0,10}   {1,10} -> {2,10}   {3}'
+
+        # ---- report: markdown ----
+        'md.title'       = '# Disk audit report'
+        'md.generated'   = '- Generated: {0}'
+        'md.host'        = '- Host: {0}'
+        'md.baseline'    = '- Baseline: {0} ({1})'
+        'md.current'     = '- Current: {0} ({1})'
+        'md.elapsed'     = '- Elapsed: {0:N2} days'
+        'md.volume'      = '## Volume'
+        'md.metric'      = '| Metric | Value |'
+        'md.total'       = '| Total | {0} |'
+        'md.free_before' = '| Free before | {0} |'
+        'md.free_after'  = '| Free after | {0} |'
+        'md.free_delta'  = '| Free delta | {0} |'
+        'md.grew'        = '## Grew'
+        'md.shrank'      = '## Shrank'
+        'md.path'        = '| Path | Before | After | Delta | Per day |'
+        'md.path4'       = '| Path | Before | After | Delta |'
+        'md.findings'    = '## Findings'
+        'md.warning'     = '> **Warning** - {0}'
+        'md.warning2'    = '> Path deltas are suppressed because the two snapshots used different scan profiles.'
+
+        # ---- verdict ----
+        'verdict.ok'    = 'OK'
+        'verdict.watch' = 'WATCH'
+        'verdict.alert' = 'ALERT'
+
+        # ---- findings ----
+        'f.low_free.title'      = 'Free space is low'
+        'f.low_free.detail'     = 'Only {0} ({1:N1}%) of {2} is free.'
+        'f.low_free.suggestion' = 'Run a cleanup pass, then re-snapshot to confirm the change.'
+
+        'f.burst.title'         = 'Directory received a large amount of data in the last 24h'
+        'f.burst.detail'        = '{0} written in the last 24 hours (now {1}, {2} files). A steady writer like this will fill the volume.'
+        'f.burst.suggestion'    = 'Identify the process writing here. If it is a diagnostic trace or log stream, disable or cap it.'
+
+        'f.temp.title'          = 'Temporary directory is large'
+        'f.temp.detail'         = '{0} in {1} across {2} files.'
+        'f.temp.suggestion'     = 'Temporary data is usually safe to remove, but check for an active writer first.'
+
+        'f.sysfile.title'       = 'System support file'
+        'f.sysfile.detail'      = '{0} occupies {1}. It is created by Windows and cannot be deleted while in use.'
+        'f.sysfile.suggestion'  = 'Configure through System Properties (virtual memory / hibernation), never by hand.'
+
+        'f.stale.title'         = 'Multiple versions of the same application are present'
+        'f.stale.detail'        = '{0} version directories under {1}; the {2} non-current one(s) account for {3} and were last touched {4} days before the newest.'
+        'f.stale.sugg_old'      = 'The older build has not been touched in {0} days; an upgrade usually leaves it behind. Remove it after confirming the new build runs.'
+        'f.stale.sugg_recent'   = 'The difference is only {0} days old, which is how browsers keep the previous build for rollback. Removing it is optional.'
+
+        'f.updater.title'       = 'Update or installer staging area'
+        'f.updater.detail'      = '{0} held in {1}.'
+        'f.updater.suggestion'  = 'Usually safe to delete, but the application may download the package again on its next update.'
+
+        'f.logs.title'          = 'Log or trace files dominate this directory'
+        'f.logs.detail'         = '{0} of logs/traces out of {1} in {2}.'
+        'f.logs.suggestion'     = 'Check whether verbose logging was left enabled by a tool or a driver.'
+
+        'f.placeholder.title'   = 'Sparse or cloud placeholder files detected'
+        'f.placeholder.detail'  = '{0} sparse and {1} offline files found. Their logical size overstates real disk usage; Explorer may show them as full.'
+        'f.placeholder.sugg'    = 'Trust the volume free space, not the sum of folder sizes, for these locations.'
+
+        'f.recon.title'         = 'Scanned paths do not reconcile with the volume'
+        'f.recon.detail'        = '{0} of {1} ({2}). Causes: inaccessible subtrees, shadow copies / restore points, volume metadata, or hard links counted twice.'
+        'f.recon.suggestion'    = 'Run with -Accurate for hard-link de-duplication, and check shadow copy storage with an elevated vssadmin query.'
+        'f.recon.undercount'    = 'unattributed usage'
+        'f.recon.overcount'     = 'over-counted usage'
+
+        'f.incomplete.title'    = 'Some directories could not be read'
+        'f.incomplete.detail'   = '{0} directories were denied during the scan; their contents are missing from the totals.'
+        'f.incomplete.sugg'     = 'Re-run elevated if you need complete coverage.'
+
+        # ---- cli ----
+        'cli.version'      = 'DiskAudit {0}'
+        'cli.banner'       = 'DiskAudit {0}   profile={1}   language={2}'
+        'cli.scanning'     = 'Scanning {0} ... (profile {1}; the first full scan can take 1-2 minutes)'
+        'cli.scanned'      = 'Scan finished: {0} top-level entries, {1} findings, {2:N1}s'
+        'cli.saved'        = 'Snapshot saved: {0}'
+        'cli.first_run'    = 'This was the first run: a baseline was recorded, so there is nothing to compare yet.'
+        'cli.first_run_volume' = '  {0}  {1:N2} GB used / {2:N2} GB total  ({3:N1}% free)'
+        'cli.next_run'     = 'Next: run the same command again later (or after the disk shrinks) to see what changed.'
+        'cli.hint_json'    = 'Structured output:  .\bin\disk-audit.ps1 -Format json -OutFile report.json'
+        'cli.hint_object'  = 'PowerShell object:  $r = .\bin\disk-audit.ps1 -PassThru'
+        'cli.hint_lang'    = 'Language:           -Language zh-CN   or   -Language en'
+        'cli.no_findings'  = 'No anomalies detected.'
+        'cli.written'      = 'Report written: {0}'
+        'cli.passthru'     = 'Result object returned to the pipeline (assign it or pipe to Format-List).'
+        'cli.usage_title'  = 'Usage'
+        'cli.usage_line'   = '  {0}'
+    }
+
+    'zh-CN' = @{
+        # ---- report: text ----
+        'report.header'         = ' 磁盘空间审计报告   {0}'
+        'report.subtitle'       = ' 档位 {0}  |  语言 {1}'
+        'report.baseline'       = ' 基线快照 : {0}  ({1})'
+        'report.current'        = ' 当前快照 : {0}  ({1})'
+        'report.elapsed'        = ' 时间间隔 : {0:N2} 天'
+        'report.free'           = ' 可用空间 : {0,10} -> {1,10}   ({2}{3})'
+        'report.perday'         = ' 每天变化 : {0,10}'
+        'report.perday_na'      = ' 每天变化 :       不适用（间隔太短，外推没有意义）'
+        'report.grew'           = ' -- 增长的目录 --------------------------------------------'
+        'report.shrank'         = ' -- 缩小的目录 --------------------------------------------'
+        'report.findings'       = ' -- 发现 --------------------------------------------------'
+        'report.recon'          = ' -- 对账 --------------------------------------------------'
+        'report.attributed'     = '   已解释 : {0}'
+        'report.volume_used'    = '   卷已用 : {0}'
+        'report.residual'       = '   未解释 : {0}  ({1})'
+        'report.residual_na'    = '   未解释 : 不适用（扫描根目录不是卷根目录）'
+        'report.verdict'        = ' 结论：{0}'
+        'report.warning'        = ' !! 警告 --------------------------------------------------'
+        'report.warning_reason' = '    {0}'
+        'report.warning_body1'  = '    两次快照使用的扫描档位不同，因此不列出路径级差异。'
+        'report.warning_body2'  = '    上方的可用空间变化仍然有效。'
+        'report.finding_line'   = '   [{0,-4}] {1}'
+        'report.finding_detail' = '            {0}'
+        'report.finding_at'     = '            位置：{0}'
+        'report.change_row'     = '   {0,10}   {1,10} -> {2,10}   {3}'
+
+        # ---- report: markdown ----
+        'md.title'       = '# 磁盘空间审计报告'
+        'md.generated'   = '- 生成时间：{0}'
+        'md.host'        = '- 主机：{0}'
+        'md.baseline'    = '- 基线快照：{0}（{1}）'
+        'md.current'     = '- 当前快照：{0}（{1}）'
+        'md.elapsed'     = '- 时间间隔：{0:N2} 天'
+        'md.volume'      = '## 卷'
+        'md.metric'      = '| 指标 | 数值 |'
+        'md.total'       = '| 总容量 | {0} |'
+        'md.free_before' = '| 之前可用 | {0} |'
+        'md.free_after'  = '| 现在可用 | {0} |'
+        'md.free_delta'  = '| 变化 | {0} |'
+        'md.grew'        = '## 增长'
+        'md.shrank'      = '## 缩小'
+        'md.path'        = '| 路径 | 之前 | 现在 | 变化 | 每天 |'
+        'md.path4'       = '| 路径 | 之前 | 现在 | 变化 |'
+        'md.findings'    = '## 发现'
+        'md.warning'     = '> **警告** — {0}'
+        'md.warning2'    = '> 两次快照的扫描档位不同，已隐藏路径级差异。'
+
+        # ---- verdict ----
+        'verdict.ok'    = '正常'
+        'verdict.watch' = '需要关注'
+        'verdict.alert' = '告警'
+
+        # ---- findings ----
+        'f.low_free.title'      = '可用空间偏低'
+        'f.low_free.detail'     = '总共 {2}，只剩 {0}（{1:N1}%）可用。'
+        'f.low_free.suggestion' = '清理一轮后重新快照，确认变化。'
+
+        'f.burst.title'         = '有目录在最近 24 小时内写入了大量数据'
+        'f.burst.detail'        = '过去 24 小时写入 {0}（当前共 {1}，{2} 个文件）。这种持续写入会很快占满磁盘。'
+        'f.burst.suggestion'    = '找到往这里写数据的进程。如果是诊断跟踪或日志流，关掉它或限制大小。'
+
+        'f.temp.title'          = '临时目录体积过大'
+        'f.temp.detail'         = '{1} 中占用 {0}，共 {2} 个文件。'
+        'f.temp.suggestion'     = '临时数据通常可以安全删除，但请先确认没有程序正在写入。'
+
+        'f.sysfile.title'       = '系统支撑文件'
+        'f.sysfile.detail'      = '{0} 占用 {1}，由 Windows 创建，使用中无法删除。'
+        'f.sysfile.suggestion'  = '请通过「系统属性」（虚拟内存 / 休眠）调整，不要手工删除。'
+
+        'f.stale.title'         = '同一程序存在多个版本目录'
+        'f.stale.detail'        = '{1} 下有 {0} 个版本目录，其中 {2} 个非当前版本共占 {3}，最后一次修改比最新版早 {4} 天。'
+        'f.stale.sugg_old'      = '旧版本已经 {0} 天没动过，升级时通常会留下它。确认新版能正常运行后可以删除。'
+        'f.stale.sugg_recent'   = '两者只差 {0} 天，这是浏览器保留上一版以便回滚的常见做法，删不删都行。'
+
+        'f.updater.title'       = '更新包 / 安装包暂存目录'
+        'f.updater.detail'      = '{1} 中存放了 {0}。'
+        'f.updater.suggestion'  = '通常可以删，但程序下次更新时可能重新下载。'
+
+        'f.logs.title'          = '该目录几乎全是日志 / 跟踪文件'
+        'f.logs.detail'         = '{2} 共 {1}，其中日志/跟踪占 {0}。'
+        'f.logs.suggestion'     = '检查是否有工具或驱动把详细日志一直开着。'
+
+        'f.placeholder.title'   = '检测到稀疏文件 / 云盘占位文件'
+        'f.placeholder.detail'  = '发现 {0} 个稀疏文件、{1} 个离线占位文件。它们的逻辑大小远大于真实占用，资源管理器可能显示为"已满"。'
+        'f.placeholder.sugg'    = '这些位置请以卷的可用空间为准，不要相信文件夹大小之和。'
+
+        'f.recon.title'         = '扫描结果与卷的实际占用对不上'
+        'f.recon.detail'        = '有 {0} 属于{1}（{2}）。常见原因：无权限子目录、卷影副本/还原点、卷元数据，或硬链接被重复计算。'
+        'f.recon.suggestion'    = '用 -Accurate 做硬链接去重；还原点需以管理员运行 vssadmin 查看。'
+        'f.recon.undercount'    = '未被解释的占用'
+        'f.recon.overcount'     = '被高估的占用'
+
+        'f.incomplete.title'    = '部分目录无法读取'
+        'f.incomplete.detail'   = '扫描时有 {0} 个目录被拒绝访问，其内容未计入总量。'
+        'f.incomplete.sugg'     = '如需完整覆盖，请以管理员身份重新运行。'
+
+        # ---- cli ----
+        'cli.version'      = 'DiskAudit {0}'
+        'cli.banner'       = 'DiskAudit {0}   档位={1}   语言={2}'
+        'cli.scanning'     = '正在扫描 {0} ...（档位 {1}，首次完整扫描约需 1-2 分钟）'
+        'cli.scanned'      = '扫描完成：{0} 个顶层条目，{1} 条发现，用时 {2:N1} 秒'
+        'cli.saved'        = '快照已保存：{0}'
+        'cli.first_run'    = '这是第一次运行，已记录基线，暂时没有可对比的数据。'
+        'cli.first_run_volume' = '  {0}  已用 {1:N2} GB / 共 {2:N2} GB（{3:N1}% 可用）'
+        'cli.next_run'     = '下一步：过一段时间（或发现磁盘变小）再运行一次同样的命令，就能看到变化。'
+        'cli.hint_json'    = '要结构化结果：  .\bin\disk-audit.ps1 -Format json -OutFile report.json'
+        'cli.hint_object'  = '要 PowerShell 对象： $r = .\bin\disk-audit.ps1 -PassThru'
+        'cli.hint_lang'    = '切换语言：      -Language zh-CN   或   -Language en'
+        'cli.no_findings'  = '没有发现异常。'
+        'cli.written'      = '报告已写入：{0}'
+        'cli.passthru'     = '结果对象已返回（可赋值给变量或接 Format-List）。'
+        'cli.usage_title'  = '用法'
+        'cli.usage_line'   = '  {0}'
+    }
+}
 
 # ---------------------------------------------------------------------------
 # small helpers
@@ -430,15 +704,14 @@ function Get-DiskAuditFindings {
     if ($free -lt ($total * 0.10) -or $free -lt 10GB) {
         $sev = if ($free -lt ($total * 0.05)) { 'high' } else { 'warn' }
         $out.Add((New-DiskAuditFinding -Id 'VOLUME_LOW_FREE' -Severity $sev `
-            -Title 'Free space is low' `
-            -Detail ("Only {0} ({1:N1}%) of {2} is free." -f (Format-DiskAuditSize $free), $vol.freePct, (Format-DiskAuditSize $total)) `
+            -Title (M 'f.low_free.title') `
+            -Detail (M 'f.low_free.detail' @((Format-DiskAuditSize $free), $vol.freePct, (Format-DiskAuditSize $total))) `
             -Path $Snapshot.scan.root `
             -Evidence @{ freeBytes = [long]$free; totalBytes = [long]$total; freePct = $vol.freePct } `
-            -Suggestion 'Run a cleanup pass, then re-snapshot to confirm the change.'))
+            -Suggestion (M 'f.low_free.suggestion')))
     }
 
     # --- V2 recent write burst --------------------------------------------
-    # Generic leak detector: a directory that received a lot of bytes recently.
     # A node's counter includes its descendants, so only the most specific node
     # is reported; ancestors would otherwise repeat the same finding.
     $burstThreshold = [math]::Max(2GB, [long]($total * 0.01))
@@ -456,13 +729,12 @@ function Get-DiskAuditFindings {
         $perDay = [long]$node.bytesLast24h
         $sev = if ($perDay -ge $highThreshold) { 'high' } else { 'warn' }
         $out.Add((New-DiskAuditFinding -Id 'RECENT_WRITE_BURST' -Severity $sev `
-            -Title 'Directory received a large amount of data in the last 24h' `
-            -Detail ("{0} written in the last 24 hours (now {1}, {2} files). A steady writer like this will fill the volume." -f `
-                (Format-DiskAuditSize $perDay), (Format-DiskAuditSize $node.physicalBytes), $node.fileCount) `
+            -Title (M 'f.burst.title') `
+            -Detail (M 'f.burst.detail' @((Format-DiskAuditSize $perDay), (Format-DiskAuditSize $node.physicalBytes), $node.fileCount)) `
             -Path $node.path `
             -ReclaimableBytes ([long]$node.physicalBytes) `
             -Evidence @{ bytesLast24h = [long]$node.bytesLast24h; bytesLast7d = [long]$node.bytesLast7d; fileCount = $node.fileCount } `
-            -Suggestion 'Identify the process writing here. If it is a diagnostic trace or log stream, disable or cap it.'))
+            -Suggestion (M 'f.burst.suggestion')))
     }
 
     # --- V3 temp bloat ------------------------------------------------------
@@ -474,11 +746,11 @@ function Get-DiskAuditFindings {
         if (-not $node) { continue }
         if ($node.physicalBytes -ge 2GB -or $node.physicalBytes -ge ($total * 0.01)) {
             $out.Add((New-DiskAuditFinding -Id 'TEMP_BLOAT' -Severity 'warn' `
-                -Title 'Temporary directory is large' `
-                -Detail ("{0} in {1} across {2} files." -f (Format-DiskAuditSize $node.physicalBytes), $node.path, $node.fileCount) `
+                -Title (M 'f.temp.title') `
+                -Detail (M 'f.temp.detail' @((Format-DiskAuditSize $node.physicalBytes), $node.path, $node.fileCount)) `
                 -Path $node.path -ReclaimableBytes ([long]$node.physicalBytes) `
                 -Evidence @{ fileCount = $node.fileCount; bytesLast24h = [long]$node.bytesLast24h } `
-                -Suggestion 'Temporary data is usually safe to remove, but check for an active writer first.'))
+                -Suggestion (M 'f.temp.suggestion')))
         }
     }
 
@@ -486,18 +758,15 @@ function Get-DiskAuditFindings {
     foreach ($e in ($entries | Where-Object { $_.kind -eq 'file' })) {
         if ($e.path -match '(?i)\\(pagefile\.sys|hiberfil\.sys|swapfile\.sys)$') {
             $out.Add((New-DiskAuditFinding -Id 'SYSTEM_SUPPORT_FILE' -Severity 'info' `
-                -Title 'System support file' `
-                -Detail ("{0} occupies {1}. It is created by Windows and cannot be deleted while in use." -f `
-                    (Split-Path -Leaf $e.path), (Format-DiskAuditSize $e.physicalBytes)) `
+                -Title (M 'f.sysfile.title') `
+                -Detail (M 'f.sysfile.detail' @((Split-Path -Leaf $e.path), (Format-DiskAuditSize $e.physicalBytes))) `
                 -Path $e.path `
                 -Evidence @{ file = (Split-Path -Leaf $e.path); bytes = [long]$e.physicalBytes } `
-                -Suggestion 'Configure through System Properties (virtual memory / hibernation), never by hand.'))
+                -Suggestion (M 'f.sysfile.suggestion')))
         }
     }
 
     # --- V5 duplicate application versions ---------------------------------
-    # Sibling directories that are bare version numbers usually mean an
-    # in-place upgrade left the previous build behind.
     $semver = '^\d+(\.\d+){1,3}$'
     $byParent = $hot | Where-Object { $_.name -match $semver } | Group-Object parentPath
     foreach ($g in $byParent) {
@@ -509,8 +778,6 @@ function Get-DiskAuditFindings {
         $bytes = ($stale | Measure-Object physicalBytes -Sum).Sum
         if ($bytes -lt 100MB) { continue }
 
-        # Distinguish a genuine stale build from a browser-style rollback copy by
-        # age: a rollback copy is days old, an abandoned build is months old.
         $newestWrite = $null
         if ($newest.newestWriteUtc) { $newestWrite = ConvertTo-DiskAuditUtcDate $newest.newestWriteUtc }
         $oldestWrite = $null
@@ -523,18 +790,12 @@ function Get-DiskAuditFindings {
         if ($null -ne $newestWrite -and $null -ne $oldestWrite) {
             $ageDays = [int][math]::Round(($newestWrite - $oldestWrite).TotalDays)
         }
-        $sev = if ($ageDays -ge 45) { 'warn' } else { 'info' }
-        $hint = if ($ageDays -ge 45) {
-            'The older build has not been touched in {0} days; a major upgrade usually leaves it behind. Remove it after confirming the new build runs.' -f $ageDays
-        }
-        else {
-            'The difference is only {0} days old, which is how browsers keep the previous build for rollback. Removing it is optional.' -f $ageDays
-        }
+        $sev  = if ($ageDays -ge 45) { 'warn' } else { 'info' }
+        $hint = if ($ageDays -ge 45) { M 'f.stale.sugg_old' @($ageDays) } else { M 'f.stale.sugg_recent' @($ageDays) }
 
         $out.Add((New-DiskAuditFinding -Id 'STALE_VERSION_DIRS' -Severity $sev `
-            -Title 'Multiple versions of the same application are present' `
-            -Detail ("{0} version directories under {1}; the {2} non-current one(s) account for {3} and were last touched {4} days before the newest." -f `
-                ($versions.Count), $g.Name, $stale.Count, (Format-DiskAuditSize $bytes), $ageDays) `
+            -Title (M 'f.stale.title') `
+            -Detail (M 'f.stale.detail' @($versions.Count, $g.Name, $stale.Count, (Format-DiskAuditSize $bytes), $ageDays)) `
             -Path $g.Name -ReclaimableBytes ([long]$bytes) `
             -Evidence @{ versions = @($versions | ForEach-Object { $_.name }); staleBytes = [long]$bytes; ageGapDays = $ageDays } `
             -Suggestion $hint))
@@ -544,35 +805,34 @@ function Get-DiskAuditFindings {
     $updaterPattern = '(?i)(update|updater|pending|patch|hotfix|download|installer)'
     foreach ($node in ($hot | Where-Object { $_.name -match $updaterPattern -and $_.physicalBytes -ge 200MB } | Sort-Object physicalBytes -Descending)) {
         $out.Add((New-DiskAuditFinding -Id 'UPDATER_STAGING' -Severity 'info' `
-            -Title 'Update or installer staging area' `
-            -Detail ("{0} held in {1}." -f (Format-DiskAuditSize $node.physicalBytes), $node.path) `
+            -Title (M 'f.updater.title') `
+            -Detail (M 'f.updater.detail' @((Format-DiskAuditSize $node.physicalBytes), $node.path)) `
             -Path $node.path -ReclaimableBytes ([long]$node.physicalBytes) `
             -Evidence @{ fileCount = $node.fileCount; installerBytes = [long]$node.installerBytes } `
-            -Suggestion 'Usually safe to delete, but the application may download the package again on its next update.'))
+            -Suggestion (M 'f.updater.suggestion')))
     }
 
     # --- V7 log / trace accumulation ---------------------------------------
     $logCandidates = $hot | Where-Object { $_.logBytes -ge 500MB -and $_.logBytes -ge ([long]$_.physicalBytes * 0.5) }
     foreach ($node in ($logCandidates | Sort-Object logBytes -Descending)) {
         $out.Add((New-DiskAuditFinding -Id 'LOG_ACCUMULATION' -Severity 'warn' `
-            -Title 'Log or trace files dominate this directory' `
-            -Detail ("{0} of logs/traces out of {1} in {2}." -f `
-                (Format-DiskAuditSize $node.logBytes), (Format-DiskAuditSize $node.physicalBytes), $node.path) `
+            -Title (M 'f.logs.title') `
+            -Detail (M 'f.logs.detail' @((Format-DiskAuditSize $node.logBytes), (Format-DiskAuditSize $node.physicalBytes), $node.path)) `
             -Path $node.path -ReclaimableBytes ([long]$node.logBytes) `
             -Evidence @{ logBytes = [long]$node.logBytes; fileCount = $node.fileCount } `
-            -Suggestion 'Check whether verbose logging was left enabled by a tool or a driver.'))
+            -Suggestion (M 'f.logs.suggestion')))
     }
 
     # --- V8 cloud placeholders / sparse files ------------------------------
-    $sparse = ($hot | Measure-Object sparseFiles -Sum).Sum
+    $sparse  = ($hot | Measure-Object sparseFiles -Sum).Sum
     $offline = ($hot | Measure-Object offlineFiles -Sum).Sum
     if ($sparse -gt 0 -or $offline -gt 0) {
         $out.Add((New-DiskAuditFinding -Id 'PLACEHOLDER_FILES' -Severity 'info' `
-            -Title 'Sparse or cloud placeholder files detected' `
-            -Detail ("{0} sparse and {1} offline files found. Their logical size overstates real disk usage; Explorer may show them as full." -f $sparse, $offline) `
+            -Title (M 'f.placeholder.title') `
+            -Detail (M 'f.placeholder.detail' @($sparse, $offline)) `
             -Path $null `
             -Evidence @{ sparseFiles = [int]$sparse; offlineFiles = [int]$offline } `
-            -Suggestion 'Trust the volume free space, not the sum of folder sizes, for these locations.'))
+            -Suggestion (M 'f.placeholder.sugg')))
     }
 
     # --- V9 reconciliation gap ---------------------------------------------
@@ -580,14 +840,13 @@ function Get-DiskAuditFindings {
     if ($null -ne $rec -and $null -ne $rec.residualBytes) {
         $gap = [math]::Abs([double]$rec.residualBytes)
         if ($gap -ge ($total * 0.02) -and $gap -ge 1GB) {
-            $dir = if ($rec.residualBytes -gt 0) { 'unattributed usage' } else { 'over-counted usage' }
+            $dir = if ($rec.residualBytes -gt 0) { M 'f.recon.undercount' } else { M 'f.recon.overcount' }
             $out.Add((New-DiskAuditFinding -Id 'RECONCILIATION_GAP' -Severity 'warn' `
-                -Title 'Scanned paths do not reconcile with the volume' `
-                -Detail ("{0} of {1} ({2}). Causes: inaccessible subtrees, shadow copies / restore points, volume metadata, or hard links counted twice." -f `
-                    (Format-DiskAuditSize $gap), $dir, $rec.residualKind) `
+                -Title (M 'f.recon.title') `
+                -Detail (M 'f.recon.detail' @((Format-DiskAuditSize $gap), $dir, $rec.residualKind)) `
                 -Path $Snapshot.scan.root `
                 -Evidence @{ residualBytes = [long]$rec.residualBytes; attributedBytes = [long]$rec.attributedBytes; accurate = $rec.accurate } `
-                -Suggestion 'Run with -Accurate for hard-link deduplication, and check shadow copy storage with an elevated vssadmin query.'))
+                -Suggestion (M 'f.recon.suggestion')))
         }
     }
 
@@ -595,15 +854,16 @@ function Get-DiskAuditFindings {
     $errs = ($entries | Measure-Object errorCount -Sum).Sum
     if ($errs -gt 0) {
         $out.Add((New-DiskAuditFinding -Id 'SCAN_INCOMPLETE' -Severity 'info' `
-            -Title 'Some directories could not be read' `
-            -Detail ("{0} directories were denied during the scan; their contents are missing from the totals." -f $errs) `
+            -Title (M 'f.incomplete.title') `
+            -Detail (M 'f.incomplete.detail' @($errs)) `
             -Path $null `
             -Evidence @{ deniedDirectories = [int]$errs } `
-            -Suggestion 'Re-run elevated if you need complete coverage.'))
+            -Suggestion (M 'f.incomplete.sugg')))
     }
 
     return @($out | Sort-Object @{ Expression = { switch ($_.severity) { 'high' { 0 } 'warn' { 1 } default { 2 } } } }, id)
 }
+
 
 # ---------------------------------------------------------------------------
 # snapshot
@@ -621,9 +881,13 @@ function New-DiskAuditSnapshot {
         [int]$MaxSeconds = 0,
         [switch]$FollowReparse,
         [switch]$Redact,
-        [string]$OutFile
+                [string]$OutFile,
+        [ValidateSet('auto','en','zh-CN')][string]$Language = 'auto'
     )
 
+    # Only switch when the caller asked explicitly; otherwise keep the current
+    # language (Invoke-DiskAudit sets it once for the whole run).
+    if ($PSBoundParameters.ContainsKey('Language')) { [void](Set-DiskAuditLanguage $Language) }
     $root = Resolve-DiskAuditRoot $Path
     $volume = Get-DiskAuditVolume -Path $root
 
@@ -849,9 +1113,11 @@ function Compare-DiskAuditSnapshot {
         [Parameter(Mandatory)]$Baseline,
         [Parameter(Mandatory)]$Current,
         [long]$WarnBytes = 300MB,
-        [int]$Top = 15
+                [int]$Top = 15,
+        [ValidateSet('auto','en','zh-CN')][string]$Language = 'auto'
     )
 
+    if ($PSBoundParameters.ContainsKey('Language')) { [void](Set-DiskAuditLanguage $Language) }
     $Baseline = ConvertTo-DiskAuditSnapshot $Baseline
     $Current  = ConvertTo-DiskAuditSnapshot $Current
     $baseTime = ConvertTo-DiskAuditUtcDate $Baseline.generatedAt
@@ -963,41 +1229,45 @@ function Format-DiskAuditReport {
     [CmdletBinding()]
     param(
         [Parameter(Mandatory)]$Report,
-        [ValidateSet('text', 'markdown')][string]$Style = 'text'
+                [ValidateSet('text', 'markdown')][string]$Style = 'text',
+        [ValidateSet('auto','en','zh-CN')][string]$Language = 'auto'
     )
 
-    $sb = New-Object System.Text.StringBuilder
-    $v  = $Report.volume
+    if ($PSBoundParameters.ContainsKey('Language')) { [void](Set-DiskAuditLanguage $Language) }
+    $sb  = New-Object System.Text.StringBuilder
+    $v   = $Report.volume
     $fmt = { param($b) Format-DiskAuditSize ([long]$b) }
+    $verdictText = M ('verdict.' + $Report.verdict)
 
     if ($Style -eq 'markdown') {
-        [void]$sb.AppendLine('# Disk audit report')
+        [void]$sb.AppendLine((M 'md.title'))
         [void]$sb.AppendLine('')
-        [void]$sb.AppendLine(("- Generated: {0}" -f $Report.generatedAt))
-        [void]$sb.AppendLine(("- Host: {0}" -f $Report.host.name))
-        [void]$sb.AppendLine(("- Baseline: {0} ({1})" -f $Report.baseline.generatedAt, $Report.baseline.profile))
-        [void]$sb.AppendLine(("- Current : {0} ({1})" -f $Report.current.generatedAt, $Report.current.profile))
-        [void]$sb.AppendLine(("- Elapsed : {0:N2} days" -f $Report.elapsedDays))
+        [void]$sb.AppendLine((M 'md.generated' @($Report.generatedAt)))
+        [void]$sb.AppendLine((M 'md.host' @($Report.host.name)))
+        [void]$sb.AppendLine((M 'md.baseline' @($Report.baseline.generatedAt, $Report.baseline.profile)))
+        [void]$sb.AppendLine((M 'md.current' @($Report.current.generatedAt, $Report.current.profile)))
+        [void]$sb.AppendLine((M 'md.elapsed' @($Report.elapsedDays)))
         [void]$sb.AppendLine('')
-        [void]$sb.AppendLine('## Volume')
+        [void]$sb.AppendLine((M 'md.volume'))
         [void]$sb.AppendLine('')
-        [void]$sb.AppendLine('| Metric | Value |')
+        [void]$sb.AppendLine((M 'md.metric'))
         [void]$sb.AppendLine('| --- | --- |')
-        [void]$sb.AppendLine(("| Total | {0} |" -f (& $fmt $v.totalBytes)))
-        [void]$sb.AppendLine(("| Free before | {0} |" -f (& $fmt $v.freeBeforeBytes)))
-        [void]$sb.AppendLine(("| Free after | {0} |" -f (& $fmt $v.freeAfterBytes)))
-        [void]$sb.AppendLine(("| Free delta | {0} |" -f (& $fmt $v.freeDeltaBytes)))
+        [void]$sb.AppendLine((M 'md.total' @((& $fmt $v.totalBytes))))
+        [void]$sb.AppendLine((M 'md.free_before' @((& $fmt $v.freeBeforeBytes))))
+        [void]$sb.AppendLine((M 'md.free_after' @((& $fmt $v.freeAfterBytes))))
+        [void]$sb.AppendLine((M 'md.free_delta' @((& $fmt $v.freeDeltaBytes))))
         [void]$sb.AppendLine('')
+
         if (-not $Report.comparable) {
-            [void]$sb.AppendLine(('> **Warning** - {0}' -f $Report.incomparableReason))
-            [void]$sb.AppendLine('>')
-            [void]$sb.AppendLine('> Path deltas are suppressed because the two snapshots used different scan profiles.')
+            [void]$sb.AppendLine((M 'md.warning' @($Report.incomparableReason)))
+            [void]$sb.AppendLine((M 'md.warning2'))
             [void]$sb.AppendLine('')
         }
+
         if ($Report.comparable -and @($Report.grew).Count -gt 0) {
-            [void]$sb.AppendLine('## Grew')
+            [void]$sb.AppendLine((M 'md.grew'))
             [void]$sb.AppendLine('')
-            [void]$sb.AppendLine('| Path | Before | After | Delta | Per day |')
+            [void]$sb.AppendLine((M 'md.path'))
             [void]$sb.AppendLine('| --- | --- | --- | --- | --- |')
             foreach ($c in $Report.grew) {
                 $perDay = if ($null -eq $c.deltaPerDay) { 'n/a' } else { & $fmt $c.deltaPerDay }
@@ -1005,20 +1275,22 @@ function Format-DiskAuditReport {
             }
             [void]$sb.AppendLine('')
         }
+
         if ($Report.comparable -and @($Report.shrank).Count -gt 0) {
-            [void]$sb.AppendLine('## Shrank')
+            [void]$sb.AppendLine((M 'md.shrank'))
             [void]$sb.AppendLine('')
-            [void]$sb.AppendLine('| Path | Before | After | Delta |')
+            [void]$sb.AppendLine((M 'md.path4'))
             [void]$sb.AppendLine('| --- | --- | --- | --- |')
             foreach ($c in $Report.shrank) {
                 [void]$sb.AppendLine(("| ``{0}`` | {1} | {2} | {3} |" -f $c.path, (& $fmt $c.beforeBytes), (& $fmt $c.afterBytes), (& $fmt $c.deltaBytes)))
             }
             [void]$sb.AppendLine('')
         }
-        [void]$sb.AppendLine('## Findings')
+
+        [void]$sb.AppendLine((M 'md.findings'))
         [void]$sb.AppendLine('')
         foreach ($f in $Report.findings) {
-            [void]$sb.AppendLine(("- **[{0}/{1}] {2}** - {3}" -f $f.severity, $f.id, $f.title, $f.detail))
+            [void]$sb.AppendLine(("- **[{0}/{1}] {2}** — {3}" -f $f.severity, $f.id, $f.title, $f.detail))
         }
         return $sb.ToString()
     }
@@ -1026,68 +1298,71 @@ function Format-DiskAuditReport {
     # ---- text ----
     $line = '=' * 62
     [void]$sb.AppendLine($line)
-    [void]$sb.AppendLine(" Disk audit report   $($Report.host.name)")
+    [void]$sb.AppendLine((M 'report.header' @($Report.host.name)))
+    [void]$sb.AppendLine((M 'report.subtitle' @($Report.current.profile, (Get-DiskAuditLanguage))))
     [void]$sb.AppendLine($line)
-    [void]$sb.AppendLine((" Baseline : {0}  ({1})" -f $Report.baseline.generatedAt, $Report.baseline.profile))
-    [void]$sb.AppendLine((" Current  : {0}  ({1})" -f $Report.current.generatedAt, $Report.current.profile))
-    [void]$sb.AppendLine((" Elapsed  : {0:N2} days" -f $Report.elapsedDays))
+    [void]$sb.AppendLine((M 'report.baseline' @($Report.baseline.generatedAt, $Report.baseline.profile)))
+    [void]$sb.AppendLine((M 'report.current' @($Report.current.generatedAt, $Report.current.profile)))
+    [void]$sb.AppendLine((M 'report.elapsed' @($Report.elapsedDays)))
     [void]$sb.AppendLine('')
-    [void]$sb.AppendLine((" Free     : {0,10} -> {1,10}   ({2}{3})" -f (& $fmt $v.freeBeforeBytes), (& $fmt $v.freeAfterBytes), $(if ($v.freeDeltaBytes -ge 0) { '+' } else { '' }), (& $fmt $v.freeDeltaBytes)))
+    [void]$sb.AppendLine((M 'report.free' @((& $fmt $v.freeBeforeBytes), (& $fmt $v.freeAfterBytes), $(if ($v.freeDeltaBytes -ge 0) { '+' } else { '' }), (& $fmt $v.freeDeltaBytes))))
     if ($null -eq $v.freePerDayBytes) {
-        [void]$sb.AppendLine(" Per day  :        n/a  (interval too short to extrapolate)")
+        [void]$sb.AppendLine((M 'report.perday_na'))
     }
     else {
-        [void]$sb.AppendLine((" Per day  : {0,10}" -f (& $fmt $v.freePerDayBytes)))
+        [void]$sb.AppendLine((M 'report.perday' @((& $fmt $v.freePerDayBytes))))
     }
     [void]$sb.AppendLine('')
 
     if (-not $Report.comparable) {
-        [void]$sb.AppendLine(' !! WARNING --------------------------------------------------')
-        [void]$sb.AppendLine(("    {0}" -f $Report.incomparableReason))
-        [void]$sb.AppendLine('    Path deltas are suppressed because the two snapshots used')
-        [void]$sb.AppendLine('    different scan profiles. Free space movement above is still valid.')
+        [void]$sb.AppendLine((M 'report.warning'))
+        [void]$sb.AppendLine((M 'report.warning_reason' @($Report.incomparableReason)))
+        [void]$sb.AppendLine((M 'report.warning_body1'))
+        [void]$sb.AppendLine((M 'report.warning_body2'))
         [void]$sb.AppendLine('')
     }
 
     if ($Report.comparable -and @($Report.grew).Count -gt 0) {
-        [void]$sb.AppendLine(' -- Grew --------------------------------------------------')
+        [void]$sb.AppendLine((M 'report.grew'))
         foreach ($c in $Report.grew) {
-            [void]$sb.AppendLine(("   {0,10}   {1,10} -> {2,10}   {3}" -f (& $fmt $c.deltaBytes), (& $fmt $c.beforeBytes), (& $fmt $c.afterBytes), $c.path))
+            [void]$sb.AppendLine((M 'report.change_row' @((& $fmt $c.deltaBytes), (& $fmt $c.beforeBytes), (& $fmt $c.afterBytes), $c.path)))
         }
         [void]$sb.AppendLine('')
     }
+
     if ($Report.comparable -and @($Report.shrank).Count -gt 0) {
-        [void]$sb.AppendLine(' -- Shrank ------------------------------------------------')
+        [void]$sb.AppendLine((M 'report.shrank'))
         foreach ($c in $Report.shrank) {
-            [void]$sb.AppendLine(("   {0,10}   {1,10} -> {2,10}   {3}" -f (& $fmt $c.deltaBytes), (& $fmt $c.beforeBytes), (& $fmt $c.afterBytes), $c.path))
+            [void]$sb.AppendLine((M 'report.change_row' @((& $fmt $c.deltaBytes), (& $fmt $c.beforeBytes), (& $fmt $c.afterBytes), $c.path)))
         }
         [void]$sb.AppendLine('')
     }
 
     if (@($Report.findings).Count -gt 0) {
-        [void]$sb.AppendLine(' -- Findings ----------------------------------------------')
+        [void]$sb.AppendLine((M 'report.findings'))
         foreach ($f in $Report.findings) {
-            [void]$sb.AppendLine(("   [{0,-4}] {1}" -f $f.severity, $f.title))
-            [void]$sb.AppendLine(("            {0}" -f $f.detail))
-            if ($f.path) { [void]$sb.AppendLine(("            at {0}" -f $f.path)) }
+            [void]$sb.AppendLine((M 'report.finding_line' @($f.severity, $f.title)))
+            [void]$sb.AppendLine((M 'report.finding_detail' @($f.detail)))
+            if ($f.path) { [void]$sb.AppendLine((M 'report.finding_at' @($f.path))) }
         }
         [void]$sb.AppendLine('')
     }
 
     $rec = $Report.reconciliation
-    [void]$sb.AppendLine(' -- Reconciliation ----------------------------------------')
-    [void]$sb.AppendLine(("   attributed : {0}" -f (& $fmt $rec.attributedBytes)))
-    [void]$sb.AppendLine(("   volume used: {0}" -f (& $fmt $rec.usedBytes)))
+    [void]$sb.AppendLine((M 'report.recon'))
+    [void]$sb.AppendLine((M 'report.attributed' @((& $fmt $rec.attributedBytes))))
+    [void]$sb.AppendLine((M 'report.volume_used' @((& $fmt $rec.usedBytes))))
     if ($null -eq $rec.residualBytes) {
-        [void]$sb.AppendLine("   residual   : n/a  (scan root is not the volume root)")
+        [void]$sb.AppendLine((M 'report.residual_na'))
     }
     else {
-        [void]$sb.AppendLine(("   residual   : {0}  ({1})" -f (& $fmt $rec.residualBytes), $rec.residualKind))
+        [void]$sb.AppendLine((M 'report.residual' @((& $fmt $rec.residualBytes), $rec.residualKind)))
     }
     [void]$sb.AppendLine('')
-    [void]$sb.AppendLine((" Verdict: {0}" -f $Report.verdict.ToUpperInvariant()))
+    [void]$sb.AppendLine((M 'report.verdict' @($verdictText)))
     return $sb.ToString()
 }
+
 
 # ---------------------------------------------------------------------------
 # orchestrator
@@ -1107,13 +1382,32 @@ function Invoke-DiskAudit {
         [string]$OutFile,
         [switch]$Redact,
         [long]$WarnBytes = 300MB,
-        [int]$MaxSeconds = 0
+        [int]$MaxSeconds = 0,
+        [ValidateSet('auto', 'en', 'zh-CN')][string]$Language = 'auto',
+        [switch]$PassThru,
+        [switch]$Quiet
     )
 
+    $lang = Set-DiskAuditLanguage $Language
     if (-not $SnapshotDir) { $SnapshotDir = Join-Path (Get-Location) 'snapshots' }
+    $root = Resolve-DiskAuditRoot $Path
 
-    $current = New-DiskAuditSnapshot -Path $Path -Profile $Profile -Accurate:$Accurate -Redact:$Redact -MaxSeconds $MaxSeconds
+    $banner = (-not $Quiet) -and ($Format -eq 'text')
+    if ($banner) {
+        Write-Host ''
+        Write-Host (M 'cli.banner' @($script:ToolVersion, $Profile, $lang)) -ForegroundColor Cyan
+        Write-Host (M 'cli.scanning' @($root, $Profile)) -ForegroundColor DarkGray
+    }
 
+    $sw = [System.Diagnostics.Stopwatch]::StartNew()
+    $current = New-DiskAuditSnapshot -Path $Path -Profile $Profile -Accurate:$Accurate -Redact:$Redact -MaxSeconds $MaxSeconds -Language $Language
+    $sw.Stop()
+
+    if ($banner) {
+        Write-Host (M 'cli.scanned' @($current.scan.entryCount, @($current.findings).Count, $sw.Elapsed.TotalSeconds)) -ForegroundColor DarkGray
+    }
+
+    # ---- baseline -------------------------------------------------------
     $baselineSnapshot = $null
     $baselinePath = $Baseline
     if (-not $NoCompare -and -not $baselinePath) {
@@ -1121,7 +1415,6 @@ function Invoke-DiskAudit {
             $matching = Get-ChildItem -LiteralPath $SnapshotDir -Filter ("snapshot-*-{0}-*.json" -f $Profile) -File -ErrorAction SilentlyContinue |
                         Sort-Object LastWriteTime -Descending | Select-Object -First 1
             if (-not $matching) {
-                Write-Warning ("No {0} baseline found; falling back to the newest snapshot of any profile. Path deltas may not be comparable." -f $Profile)
                 $matching = Get-ChildItem -LiteralPath $SnapshotDir -Filter 'snapshot-*.json' -File -ErrorAction SilentlyContinue |
                             Sort-Object LastWriteTime -Descending | Select-Object -First 1
             }
@@ -1134,17 +1427,17 @@ function Invoke-DiskAudit {
 
     $report = $null
     if ($baselineSnapshot) {
-        $report = Compare-DiskAuditSnapshot -Baseline $baselineSnapshot -Current $current -WarnBytes $WarnBytes
+        $report = Compare-DiskAuditSnapshot -Baseline $baselineSnapshot -Current $current -WarnBytes $WarnBytes -Language $Language
     }
 
+    # ---- persist snapshot ------------------------------------------------
+    $savedPath = $null
     if ($SaveSnapshot -or (-not $NoCompare)) {
         if (-not (Test-Path -LiteralPath $SnapshotDir)) { New-Item -ItemType Directory -Path $SnapshotDir -Force | Out-Null }
         $stamp  = (Get-Date).ToUniversalTime().ToString('yyyyMMddTHHmmssZ')
-        # Profile and accuracy are part of the name so a quick scan can never be
-        # silently compared against a full one.
         $accTag = if ($current.scan.accurate) { 'acc' } else { 'std' }
-        $file   = Join-Path $SnapshotDir ("snapshot-$stamp-$($current.scan.profile)-$accTag.json")
-        Save-DiskAuditSnapshot -Snapshot $current -Path $file | Out-Null
+        $savedPath = Join-Path $SnapshotDir ("snapshot-$stamp-$($current.scan.profile)-$accTag.json")
+        Save-DiskAuditSnapshot -Snapshot $current -Path $savedPath | Out-Null
     }
 
     $payload = if ($report) { $report } else { $current }
@@ -1155,29 +1448,56 @@ function Invoke-DiskAudit {
         $dir2 = Split-Path -Parent $full
         if ($dir2 -and -not (Test-Path -LiteralPath $dir2)) { New-Item -ItemType Directory -Path $dir2 -Force | Out-Null }
         [System.IO.File]::WriteAllText($full, $json, (New-Object System.Text.UTF8Encoding($false)))
-        Write-Verbose "Wrote $full"
     }
 
-    switch ($Format) {
-        'json' {
-            # machine consumption: emit to the pipeline so `> report.json` works
+    # ---- display ---------------------------------------------------------
+    if ($Format -eq 'json' -and -not $PassThru) {
+        if ($OutFile) {
+            # Already written above; keep the pipeline clean for scripts.
+            if (-not $Quiet) { Write-Host (M 'cli.written' @([System.IO.Path]::GetFullPath($OutFile))) }
+        }
+        else {
             $payload | ConvertTo-Json -Depth 12
-            return
         }
-        'markdown' {
-            if ($report) { Write-Host (Format-DiskAuditReport -Report $report -Style markdown) }
-            else { Write-Host ($payload | ConvertTo-Json -Depth 12) }
-        }
-        default {
-            if ($report) { Write-Host (Format-DiskAuditReport -Report $report -Style text) }
-            else {
-                Write-Host ("Snapshot written. {0} entries, {1} findings." -f $current.scan.entryCount, @($current.findings).Count)
-            }
-        }
+        return
     }
 
-    return $payload
+    # The report (or the first-run summary) is the result of the command and is
+    # always printed; -Quiet only removes the chrome around it.
+    Write-Host ''
+    if ($report) {
+        Write-Host (Format-DiskAuditReport -Report $report -Style $(if ($Format -eq 'markdown') { 'markdown' } else { 'text' }))
+    }
+    else {
+        Write-Host (M 'cli.first_run') -ForegroundColor Yellow
+        Write-Host ''
+        $vol = $current.volume
+        Write-Host (M 'cli.first_run_volume' @($vol.drive, ($vol.usedBytes / 1GB), ($vol.totalBytes / 1GB), $vol.freePct))
+        foreach ($f in @($current.findings)) {
+            Write-Host (M 'report.finding_line' @($f.severity, $f.title))
+            Write-Host (M 'report.finding_detail' @($f.detail))
+        }
+        if (@($current.findings).Count -eq 0) { Write-Host (M 'cli.no_findings') -ForegroundColor Green }
+    }
+
+    if (-not $Quiet) {
+        Write-Host ''
+        if ($savedPath) { Write-Host (M 'cli.saved' @($savedPath)) -ForegroundColor DarkGray }
+        if ($OutFile)   { Write-Host (M 'cli.written' @([System.IO.Path]::GetFullPath($OutFile))) -ForegroundColor DarkGray }
+        if (-not $report) { Write-Host (M 'cli.next_run') -ForegroundColor Yellow }
+        if ($Format -eq 'text') {
+            Write-Host ''
+            Write-Host (M 'cli.hint_json')   -ForegroundColor DarkGray
+            Write-Host (M 'cli.hint_object') -ForegroundColor DarkGray
+            Write-Host (M 'cli.hint_lang')   -ForegroundColor DarkGray
+        }
+        if ($PassThru) { Write-Host (M 'cli.passthru') -ForegroundColor DarkGray }
+    }
+
+    if ($PassThru) { return $payload }
+    return
 }
+
 
 Export-ModuleMember -Function @(
     'Get-DiskAuditVolume',
@@ -1187,5 +1507,7 @@ Export-ModuleMember -Function @(
     'Compare-DiskAuditSnapshot',
     'Format-DiskAuditReport',
     'Format-DiskAuditSize',
-    'Invoke-DiskAudit'
+    'Invoke-DiskAudit',
+    'Set-DiskAuditLanguage',
+    'Get-DiskAuditLanguage'
 )

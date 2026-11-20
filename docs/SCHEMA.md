@@ -18,6 +18,9 @@ Conventions used everywhere:
 - enums: `kind` = `dir|file`, `severity` = `info|warn|high`, `change` = `grew|shrank`,
   `residualKind` = `undercount|overcount|not-applicable`, `verdict` = `ok|watch|alert`.
 - `schemaVersion` is present on both payloads and follows semver of the *data contract*, not of the tool.
+- **`title` / `detail` / `suggestion` follow `-Language`** (`en` or `zh-CN`). They are prose for humans;
+  the stable, language-independent contract is `id` + `severity` + `evidence` + every byte count.
+  A dashboard should key on `id` and read `evidence`, never parse the prose.
 
 ---
 

@@ -6,6 +6,8 @@
 
 **Portable, snapshot-based disk space auditing for Windows.**
 
+[English](README.md) | [简体中文](README.zh-CN.md)
+
 DiskAudit answers one question honestly: *"why is this volume full, and what changed?"*
 
 Most disk tools show you folder sizes that don't add up to the free space you actually have.
@@ -168,7 +170,50 @@ pwsh ./bin/disk-audit.ps1 -Path "$env:LOCALAPPDATA"
 
 # Share a report without leaking the host name / user profile path
 pwsh ./bin/disk-audit.ps1 -Format json -Redact -OutFile report.json
+
+# Chinese output (the UI language follows the OS by default)
+pwsh ./bin/disk-audit.ps1 -Language zh-CN
+
+# Built-in help, in the current language
+pwsh ./bin/disk-audit.ps1 -Help
+
+# Get the result as a PowerShell object instead of text
+$r = pwsh ./bin/disk-audit.ps1 -PassThru
 ```
+
+### What the first run tells you
+
+A brand-new machine has no history, so the first run can only describe the present and
+record a baseline. It says so explicitly and tells you what to do next:
+
+```text
+DiskAudit 0.2.0   profile=standard   language=en
+Scanning C:\ ... (profile standard; the first full scan can take 1-2 minutes)
+Scan finished: 23 top-level entries, 13 findings, 61.2s
+
+This was the first run: a baseline was recorded, so there is nothing to compare yet.
+
+  C:  241.35 GB used / 400.00 GB total  (39.7% free)
+   [warn] Multiple versions of the same application are present
+            ...
+
+Snapshot saved: ./snapshots/snapshot-20261120T124653Z-standard-std.json
+Next: run the same command again later (or after the disk shrinks) to see what changed.
+
+Structured output:  .\bin\disk-audit.ps1 -Format json -OutFile report.json
+PowerShell object:  $r = .\bin\disk-audit.ps1 -PassThru
+Language:           -Language zh-CN   or   -Language en
+```
+
+### Output language
+
+`-Language auto` (the default) follows the Windows UI language. `en` and `zh-CN` force a
+language. It affects every human-readable string: the report, the findings, the hints and the
+`title` / `detail` / `suggestion` fields inside the JSON.
+
+The machine-readable contract never changes with the language: `id`, `severity`, `evidence`,
+`reclaimableBytes` and every byte count stay identical, so a dashboard can ignore the prose
+entirely.
 
 ---
 
