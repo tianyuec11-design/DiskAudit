@@ -8,57 +8,58 @@ on:
 
 jobs:
   test:
-    name: tests (${{ matrix.shell }})
+    name: test (${{ matrix.label }})
     runs-on: windows-latest
     strategy:
       fail-fast: false
       matrix:
         include:
-          - shell: pwsh
-            label: PowerShell 7
-          - shell: powershell
-            label: Windows PowerShell 5.1
+          - label: PowerShell 7
+            exe: pwsh
+            flag: -NoProfile
+          - label: Windows PowerShell 5.1
+            exe: powershell
+            flag: -NoProfile
 
     steps:
       - uses: actions/checkout@v4
 
-      - name: Show PowerShell version
-        shell: ${{ matrix.shell }}
-        run: $PSVersionTable | Out-String
+      - name: Show host info
+        run: |
+          Write-Host "runner: $env:RUNNER_OS / $env:RUNNER_IMAGE_OS"
+          $PSVersionTable | Out-String | Write-Host
 
       - name: Run test suite
-        shell: ${{ matrix.shell }}
-        run: ./tests/run-tests.ps1
+        run: ${{ matrix.exe }} ${{ matrix.flag }} -ExecutionPolicy Bypass -File ./tests/run-tests.ps1
 
   lint:
-    name: PSScriptAnalyzer
+    name: lint (PSScriptAnalyzer)
     runs-on: windows-latest
     steps:
       - uses: actions/checkout@v4
 
       - name: Install PSScriptAnalyzer
-        shell: pwsh
         run: Install-Module PSScriptAnalyzer -Force -Scope CurrentUser -SkipPublisherCheck
 
-      - name: Lint module and CLI
-        shell: pwsh
+      - name: Analyse module and CLI
         run: |
           $results = Invoke-ScriptAnalyzer -Path . -Recurse -Severity Error
-          if ($results) { $results | Format-Table -AutoSize | Out-String | Write-Host; exit 1 }
+          if ($results) {
+            $results | Format-Table -AutoSize | Out-String | Write-Host
+            exit 1
+          }
           Write-Host 'No errors reported.'
 
   smoke:
-    name: end-to-end smoke (real snapshot)
+    name: smoke (real snapshot)
     runs-on: windows-latest
     steps:
       - uses: actions/checkout@v4
 
-      - name: "Snapshot the runner's C: drive"
-        shell: pwsh
+      - name: Take a baseline snapshot
         run: ./bin/disk-audit.ps1 -Profile quick -NoCompare -SaveSnapshot -OutFile ./out/snapshot.json
 
-      - name: Validate the payload against the schema
-        shell: pwsh
+      - name: Check the payload
         run: |
           $snap = Get-Content ./out/snapshot.json -Raw | ConvertFrom-Json
           if ($snap.kind -ne 'snapshot') { throw 'unexpected kind' }
@@ -66,8 +67,7 @@ jobs:
           if ($snap.volume.totalBytes -le 0) { throw 'bad volume size' }
           Write-Host ("entries={0} hotspots={1} findings={2}" -f @($snap.entries).Count, @($snap.hotspots).Count, @($snap.findings).Count)
 
-      - name: Second snapshot must produce a report
-        shell: pwsh
+      - name: Second run must produce a report
         run: |
           ./bin/disk-audit.ps1 -Profile quick -Format markdown -OutFile ./out/report.md
           if (-not (Test-Path ./out/report.md)) { throw 'report not written' }
