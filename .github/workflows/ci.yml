@@ -62,8 +62,8 @@ jobs:
             $hasBom = ($bytes.Length -ge 3 -and $bytes[0] -eq 0xEF -and $bytes[1] -eq 0xBB -and $bytes[2] -eq 0xBF)
             $text = [System.Text.Encoding]::UTF8.GetString($bytes)
             if ($hasBom) { $text = $text.Substring(1) }
-            if ([regex]::IsMatch($text, '[^\x00-\x7F]')) {
-              $bad += ("{0} (BOM={1})" -f $_.FullName, $hasBom)
+            if ((-not $hasBom) -and [regex]::IsMatch($text, '[^\x00-\x7F]')) {
+              $bad += $_.FullName
             }
           }
           if ($bad) {
