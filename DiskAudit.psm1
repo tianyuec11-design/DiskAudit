@@ -1,4 +1,4 @@
-#Requires -Version 5.1
+﻿#Requires -Version 5.1
 <#
     DiskAudit - snapshot-based, host-agnostic disk space auditing.
 
@@ -989,7 +989,7 @@ function Format-DiskAuditReport {
         [void]$sb.AppendLine(("| Free delta | {0} |" -f (& $fmt $v.freeDeltaBytes)))
         [void]$sb.AppendLine('')
         if (-not $Report.comparable) {
-            [void]$sb.AppendLine(('> **Warning** — {0}' -f $Report.incomparableReason))
+            [void]$sb.AppendLine(('> **Warning** - {0}' -f $Report.incomparableReason))
             [void]$sb.AppendLine('>')
             [void]$sb.AppendLine('> Path deltas are suppressed because the two snapshots used different scan profiles.')
             [void]$sb.AppendLine('')
@@ -1018,7 +1018,7 @@ function Format-DiskAuditReport {
         [void]$sb.AppendLine('## Findings')
         [void]$sb.AppendLine('')
         foreach ($f in $Report.findings) {
-            [void]$sb.AppendLine(("- **[{0}/{1}] {2}** — {3}" -f $f.severity, $f.id, $f.title, $f.detail))
+            [void]$sb.AppendLine(("- **[{0}/{1}] {2}** - {3}" -f $f.severity, $f.id, $f.title, $f.detail))
         }
         return $sb.ToString()
     }

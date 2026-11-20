@@ -50,6 +50,29 @@ jobs:
           }
           Write-Host 'No errors reported.'
 
+      # Windows PowerShell 5.1 reads .ps1 files as ANSI unless they start with a
+      # UTF-8 BOM. A stray em dash in a string then turns into garbage and can
+      # even close the string early, which parses fine on some code pages and
+      # explodes on others. Keep sources ASCII, or add a BOM.
+      - name: Check PowerShell source encoding
+        run: |
+          $bad = @()
+          Get-ChildItem -Recurse -File -Include *.ps1, *.psm1, *.psd1 | ForEach-Object {
+            $bytes = [System.IO.File]::ReadAllBytes($_.FullName)
+            $hasBom = ($bytes.Length -ge 3 -and $bytes[0] -eq 0xEF -and $bytes[1] -eq 0xBB -and $bytes[2] -eq 0xBF)
+            $text = [System.Text.Encoding]::UTF8.GetString($bytes)
+            if ($hasBom) { $text = $text.Substring(1) }
+            if ([regex]::IsMatch($text, '[^\x00-\x7F]')) {
+              $bad += ("{0} (BOM={1})" -f $_.FullName, $hasBom)
+            }
+          }
+          if ($bad) {
+            Write-Host 'Non-ASCII bytes without a UTF-8 BOM (breaks Windows PowerShell 5.1):'
+            $bad | ForEach-Object { Write-Host "  $_" }
+            exit 1
+          }
+          Write-Host 'Encoding OK.'
+
   smoke:
     name: smoke (real snapshot)
     runs-on: windows-latest
